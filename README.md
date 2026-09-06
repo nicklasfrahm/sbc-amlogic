@@ -82,19 +82,44 @@ happen to be the same size.
 
 ### Runtime consequences
 
-- With the backup GPT in the right place the Linux kernel falls back to it and
-  the partitions enumerate normally.
-- `go-blockdevice` only falls back to the backup header when the primary one
-  is **zeroed**. Here LBA 1 holds BL2 code, so `gpt.Read` returns an error
-  instead. That stops Talos from rewriting the partition table, which is what
-  keeps the bootloader intact, but it also means the `EPHEMERAL` partition
-  will not auto-grow to fill the medium.
-- Do not run `sgdisk`/`gdisk` repair on the image or the installed medium.
-  "Repairing" the primary GPT writes over BL2 and the board stops booting.
+SD cards are only good for a single boot. `go-blockdevice` treats a primary
+header with a bad signature as "absent" rather than as an error:
 
-The clean way out for eMMC is to write the FIP to the eMMC boot partition
-(`/dev/mmcblk0boot0`), which is a separate area from the user data where the
-GPT lives. That is not available for SD cards and is not implemented here.
+    if hdr.Get_signature() != HeaderSignature {
+        return nil, nil, nil
+    }
+
+so `gpt.Read` silently falls back to the backup header and Talos reads the
+partition table just fine. The problem is what happens next. A fresh image
+only carries `EFI`, `BIOS`, `BOOT` and `META`; Talos creates `STATE` and
+`EPHEMERAL` on first boot, which means it writes the partition table. When it
+does, `Table.Write` puts the primary header back where the spec says it goes:
+
+    t.primaryHeaderLBA = hdr.Get_alternate_lba()   // 1
+    t.dev.WriteAt(primaryHeader, int64(t.primaryHeaderLBA)*int64(t.sectorSize))
+
+That write lands on sector 1, on top of BL2, and the board stops booting on
+the next power cycle. There is no overlay knob for this: `PartitionOptions`
+only moves the entry array, and the GPT specification pins the header to LBA
+1.
+
+So an SD card is fine for bringing the board up and proving the boot chain
+works, but it cannot carry a node that survives a reboot.
+
+### Recommended: boot from eMMC
+
+The boot ROM does have a way out, but only on eMMC. From the U-Boot
+documentation:
+
+> On GXL and newer boards it expects to find the FIP binary in sector 1, 512
+> bytes offset from the start. If not found it checks the boot0 partition,
+> then the boot1 partition.
+
+Writing the FIP to the `boot0` hardware partition keeps it out of the user
+area entirely, so the GPT is never touched: the primary header survives,
+nothing depends on the backup, and Talos can rewrite the partition table as
+often as it likes. SD cards have no such fallback, the ROM only ever looks at
+sector 1 there.
 
 ## Comparison with Armbian
 

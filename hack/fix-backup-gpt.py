@@ -7,8 +7,17 @@ partition table. Writing a disk image that is smaller than the target medium
 leaves that backup somewhere in the middle, where neither U-Boot nor Linux
 look for it, and the medium ends up with no readable partition table at all.
 
-This rewrites the backup GPT at the end of the target so both can find it. It
-never touches LBA 1, so the bootloader stays intact.
+This rewrites the backup GPT at the end of the target so both can find it, and
+fixes up the protective MBR to span the real medium. Linux rejects the whole
+GPT when the protective MBR does not cover the device:
+
+    sz = le32_to_cpu(mbr->partition_record[part].size_in_lba);
+    if (sz != (uint32_t) total_sectors - 1 && sz != 0xFFFFFFFF)
+            ret = 0;
+
+so without that second fixup the partitions never show up even though the
+backup GPT is perfectly valid. Neither write touches LBA 1, so the bootloader
+stays intact.
 """
 import struct
 import sys
@@ -71,10 +80,30 @@ def main():
         f.write(entries)
         f.seek(tgt_last * SECTOR)
         f.write(bytes(hdr))
+
+        # Point the protective MBR at the whole medium, otherwise Linux throws
+        # the GPT away before it ever looks at the backup header.
+        f.seek(0)
+        mbr = bytearray(f.read(SECTOR))
+        span = min(tgt_last, 0xFFFFFFFF)
+        patched = False
+
+        for i in range(4):
+            rec = 446 + i * 16
+            if mbr[rec + 4] == 0xEE:
+                struct.pack_into("<I", mbr, rec + 12, span)
+                patched = True
+
+        if not patched:
+            raise SystemExit("no protective MBR entry found, refusing to guess")
+
+        f.seek(0)
+        f.write(bytes(mbr))
         f.flush()
 
     print(f"backup GPT moved from LBA {img_last} to {tgt_last}")
     print(f"partition entries written at LBA {new_entries_lba}")
+    print(f"protective MBR now spans {span} sectors")
 
 
 if __name__ == "__main__":
