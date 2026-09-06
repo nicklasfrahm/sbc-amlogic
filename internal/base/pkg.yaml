@@ -1,0 +1,9 @@
+name: base
+variant: scratch
+shell: /bin/bash
+dependencies:
+  - image: "{{ .BUILD_ARG_TOOLS_PREFIX }}/tools:{{ .BUILD_ARG_TOOLS }}"
+    to: /rootfs
+finalize:
+  - from: /rootfs
+    to: /

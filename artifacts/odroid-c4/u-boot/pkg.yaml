@@ -1,0 +1,39 @@
+# References:
+#   U-Boot:
+#     - https://u-boot.readthedocs.io/en/latest
+#     - https://github.com/u-boot/u-boot/blob/master/doc/board/amlogic/odroid-c4.rst
+#
+# Builds the mainline U-Boot proper, which acts as BL33 for the Amlogic
+# signed boot chain. The resulting binary is not bootable on its own: it has
+# to be packed into a FIP image together with the vendor supplied BL2/BL30/
+# BL31 blobs, which is done by the `fip-odroid-c4` stage.
+name: u-boot-odroid-c4
+variant: scratch
+shell: /bin/bash
+dependencies:
+  - stage: base
+steps:
+  - sources:
+      - url: https://ftp.denx.de/pub/u-boot/u-boot-{{ .uboot_version }}.tar.bz2
+        destination: u-boot.tar.bz2
+        sha256: "{{ .uboot_sha256 }}"
+        sha512: "{{ .uboot_sha512 }}"
+    env:
+      SOURCE_DATE_EPOCH: {{ .BUILD_ARG_SOURCE_DATE_EPOCH }}
+    prepare:
+      # odroid-c4_defconfig
+      - |
+        tar xf u-boot.tar.bz2 --strip-components=1
+      - |
+        make odroid-c4_defconfig
+    build:
+      - |
+        make -j $(nproc) HOSTLDLIBS_mkimage="-lssl -lcrypto"
+    install:
+      - |
+        mkdir -p /rootfs/bl33/odroid-c4
+
+        cp u-boot.bin /rootfs/bl33/odroid-c4/u-boot.bin
+finalize:
+  - from: /rootfs
+    to: /libs

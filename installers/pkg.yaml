@@ -1,0 +1,17 @@
+name: sbc-amlogic
+variant: scratch
+dependencies:
+  - stage: odroid-c4
+  - stage: profiles
+  # NB: pinned to linux/amd64 because the Amlogic FIP packing tool is an
+  # x86-64 only binary. The output is a plain firmware blob, so it is valid
+  # for the arm64 target regardless of where it was produced.
+  - stage: fip-odroid-c4
+    platform: linux/amd64
+  - image: "{{ .BUILD_ARG_PKGS_PREFIX }}/kernel:{{ .BUILD_ARG_PKGS }}"
+    platform: linux/arm64
+    from: /dtb/amlogic/meson-sm1-odroid-c4.dtb
+    to: /rootfs/artifacts/arm64/dtb/amlogic/meson-sm1-odroid-c4.dtb
+finalize:
+  - from: /rootfs
+    to: /

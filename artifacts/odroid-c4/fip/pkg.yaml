@@ -1,0 +1,50 @@
+# References:
+#   Amlogic FIP:
+#     - https://github.com/u-boot/u-boot/blob/master/doc/board/amlogic/odroid-c4.rst
+#     - https://github.com/LibreELEC/amlogic-boot-fip
+#
+# Amlogic does not publish sources for BL2/BL30/BL31 or for the tool that packs
+# and signs them, so the vendor blobs are consumed as-is from the LibreELEC
+# repo, which is also what Armbian uses for this board.
+#
+# NB: `aml_encrypt_g12a` is a statically linked x86-64 binary, so this stage is
+# pinned to linux/amd64 by its consumers. Armbian works around this on other
+# host architectures by running it under qemu-x86_64. The output is a plain
+# firmware blob and therefore architecture independent. The packing is
+# deterministic, so this does not break reproducible builds.
+name: fip-odroid-c4
+variant: scratch
+shell: /bin/bash
+dependencies:
+  - stage: base
+  - stage: u-boot-odroid-c4
+    platform: linux/arm64
+steps:
+  - sources:
+      - url: https://github.com/LibreELEC/amlogic-boot-fip/archive/{{ .amlogic_boot_fip_ref }}.tar.gz
+        destination: amlogic-boot-fip.tar.gz
+        sha256: "{{ .amlogic_boot_fip_sha256 }}"
+        sha512: "{{ .amlogic_boot_fip_sha512 }}"
+    env:
+      SOURCE_DATE_EPOCH: {{ .BUILD_ARG_SOURCE_DATE_EPOCH }}
+    prepare:
+      - |
+        tar xf amlogic-boot-fip.tar.gz --strip-components=1
+    build:
+      - |
+        mkdir -p out tmp
+
+        # Packs BL2, BL30, BL31 and the DDR firmware around our BL33 and signs
+        # the result, producing the image the S905X3 boot ROM expects.
+        make -C odroid-c4 \
+          BL33=/libs/bl33/odroid-c4/u-boot.bin \
+          O=$(pwd)/out \
+          TMP=$(pwd)/tmp
+    install:
+      - |
+        mkdir -p /rootfs/artifacts/arm64/u-boot/odroid-c4
+
+        cp out/u-boot.bin /rootfs/artifacts/arm64/u-boot/odroid-c4/u-boot.bin
+finalize:
+  - from: /rootfs
+    to: /rootfs

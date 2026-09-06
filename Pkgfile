@@ -1,0 +1,19 @@
+# syntax = ghcr.io/siderolabs/bldr:v0.5.5
+
+format: v1alpha2
+
+vars:
+  # renovate: datasource=github-tags extractVersion=^v(?<version>.*)$ depName=u-boot/u-boot
+  uboot_version: 2025.10
+  uboot_sha256: b4f032848e56cc8f213ad59f9132c084dbbb632bc29176d024e58220e0efdf4a
+  uboot_sha512: 01ac8b2b36bd73b7accc22afd20cf45d08ff8ece6a3d1c426ec90936d1767245add92572cc162500b2160bbc0e2ceed3e111a2a0dd35f8f3a86edbd4fc78753c
+
+  # Vendor-signed Amlogic boot blobs (bl2/bl30/bl31 + DDR firmware) and the
+  # aml_encrypt_g12a packing tool. Amlogic does not publish sources for these,
+  # so the LibreELEC repo is the authoritative upstream, as used by Armbian.
+  # renovate: datasource=git-refs depName=LibreELEC/amlogic-boot-fip
+  amlogic_boot_fip_ref: 42d372123631066fb77fbcbb612dc3eb41a3f6f9
+  amlogic_boot_fip_sha256: dede20dd7666a33b33442252b994f4033cfafe3fb6d11c86019dc3ae61d55227
+  amlogic_boot_fip_sha512: 580a801d69a908b6fdba2495aad0a38c20340eab806559e93dfe167c4f08e4939d13eae1a5494ce34d29db63a86d61bddcf0bf1282bea696cc168c80fddbc8e8
+labels:
+  org.opencontainers.image.source: https://github.com/siderolabs/sbc-amlogic
