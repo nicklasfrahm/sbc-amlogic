@@ -30,3 +30,50 @@ spec:
     - matchPackageNames:
         - u-boot/u-boot
       versioning: 'regex:^(?<major>\d+)\.(?<minor>\d+)\.?(?<patch>\d+)?$'
+---
+kind: auto.CustomSteps
+spec:
+  steps:
+    - name: image
+      toplevel: true
+    - name: flash
+      toplevel: true
+---
+kind: custom.Step
+name: image
+spec:
+  makefile:
+    enabled: true
+    phony: true
+    depends:
+      - $(ARTIFACTS)
+    variables:
+      - name: TALOS_VERSION
+        defaultValue: v1.11.5
+      - name: BOARD
+        defaultValue: odroid-c4
+      - name: DISK_SIZE
+        defaultValue: "1306525696"
+    script:
+      - "@$(MAKE) target-sbc-amlogic PLATFORM=linux/amd64 TARGET_ARGS=\"--output type=oci,tar=false,dest=$(ARTIFACTS)/overlay-oci\""
+      - "@printf '%s\\n' 'baseProfileName: metal' 'arch: arm64' 'platform: metal' 'secureboot: false' 'overlay:' '  name: $(BOARD)' '  image:' '    ociPath: /overlay-oci' 'output:' '  kind: image' '  outFormat: raw' '  imageOptions:' '    diskSize: $(DISK_SIZE)' '    diskFormat: raw' '    bootloader: grub' | docker run --rm -i --privileged -v /dev:/dev -v $(PWD)/$(ARTIFACTS):/out -v $(PWD)/$(ARTIFACTS)/overlay-oci:/overlay-oci:ro ghcr.io/siderolabs/imager:$(TALOS_VERSION) -"
+      - "@mv $(ARTIFACTS)/metal-arm64.raw $(ARTIFACTS)/$(BOARD)-metal-arm64.raw"
+      - "@echo \"image ready: $(ARTIFACTS)/$(BOARD)-metal-arm64.raw\""
+---
+kind: custom.Step
+name: flash
+spec:
+  makefile:
+    enabled: true
+    phony: true
+    variables:
+      - name: DEVICE
+        defaultValue: ""
+    script:
+      - "@test -n \"$(DEVICE)\" || { echo 'set DEVICE=/dev/sdX to flash, e.g. make flash DEVICE=/dev/sda'; exit 1; }"
+      - "@test -f $(ARTIFACTS)/$(BOARD)-metal-arm64.raw || { echo 'no image, run: make image'; exit 1; }"
+      - "@echo \"about to overwrite $(DEVICE) - interrupt within 5s to abort\"; sleep 5"
+      - "@sudo dd if=$(ARTIFACTS)/$(BOARD)-metal-arm64.raw of=$(DEVICE) bs=4M conv=fsync status=progress"
+      - "@sudo ./hack/fix-backup-gpt.py $(ARTIFACTS)/$(BOARD)-metal-arm64.raw $(DEVICE)"
+      - "@sudo partprobe $(DEVICE) || true"
+      - "@lsblk -o NAME,SIZE,LABEL $(DEVICE)"
