@@ -59,14 +59,31 @@ Two consequences follow from that:
   Anything that rewrites the primary GPT in place would overwrite BL2 and
   render the board unbootable until the bootloader is written again.
 
+### Flashing
+
+Because the primary GPT header is gone, the backup GPT at the end of the disk
+is the **only** copy of the partition table. A raw image is smaller than the
+medium it is written to, which leaves that backup stranded in the middle of
+the card where neither U-Boot nor Linux look for it. The result is a medium
+with no readable partition table at all: U-Boot skips it, falls through to
+`distro_bootcmd`'s network target and the board never boots.
+
+So after writing the image the backup GPT has to be moved to the end of the
+medium:
+
+```bash
+sudo dd if=_out/odroid-c4-metal-arm64.raw of=/dev/sdX bs=4M conv=fsync status=progress
+sudo ./hack/fix-backup-gpt.py _out/odroid-c4-metal-arm64.raw /dev/sdX
+```
+
+`hack/fix-backup-gpt.py` only writes the last few sectors, so the bootloader
+at sector 1 is left alone. This is not needed when the image and the medium
+happen to be the same size.
+
 ### Runtime consequences
 
-This has been verified against a generated image rather than on hardware, so
-the following is what the code paths imply and is what the first boot on a
-real board should be checked against:
-
-- The Linux kernel's GPT parser falls back to the alternate GPT, so the
-  partitions enumerate normally and the system should boot.
+- With the backup GPT in the right place the Linux kernel falls back to it and
+  the partitions enumerate normally.
 - `go-blockdevice` only falls back to the backup header when the primary one
   is **zeroed**. Here LBA 1 holds BL2 code, so `gpt.Read` returns an error
   instead. That stops Talos from rewriting the partition table, which is what
@@ -78,6 +95,17 @@ real board should be checked against:
 The clean way out for eMMC is to write the FIP to the eMMC boot partition
 (`/dev/mmcblk0boot0`), which is a separate area from the user data where the
 GPT lives. That is not available for SD cards and is not implemented here.
+
+## Comparison with Armbian
+
+Armbian builds images for this board with an **MBR** partition table
+(`IMAGE_PARTITION_TABLE="msdos"`, first partition at 4 MiB) and so never runs
+into any of this. With MBR the partition table lives in the tail of sector 0,
+bytes 446 to 509, which is exactly the range the Amlogic FIP leaves as a hole:
+that is why Armbian's `write_uboot_platform` writes only the first 442 bytes
+at offset 0. The Amlogic boot image format was designed to coexist with MBR.
+GPT keeps its header in sector 1, which the FIP has to own, so the two cannot
+share a disk. Talos only supports GPT, hence the backup GPT dance above.
 
 ## Boot order
 
