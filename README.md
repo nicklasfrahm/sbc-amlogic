@@ -59,6 +59,33 @@ Two consequences follow from that:
   Anything that rewrites the primary GPT in place would overwrite BL2 and
   render the board unbootable until the bootloader is written again.
 
+### Runtime consequences
+
+This has been verified against a generated image rather than on hardware, so
+the following is what the code paths imply and is what the first boot on a
+real board should be checked against:
+
+- The Linux kernel's GPT parser falls back to the alternate GPT, so the
+  partitions enumerate normally and the system should boot.
+- `go-blockdevice` only falls back to the backup header when the primary one
+  is **zeroed**. Here LBA 1 holds BL2 code, so `gpt.Read` returns an error
+  instead. That stops Talos from rewriting the partition table, which is what
+  keeps the bootloader intact, but it also means the `EPHEMERAL` partition
+  will not auto-grow to fill the medium.
+- Do not run `sgdisk`/`gdisk` repair on the image or the installed medium.
+  "Repairing" the primary GPT writes over BL2 and the board stops booting.
+
+The clean way out for eMMC is to write the FIP to the eMMC boot partition
+(`/dev/mmcblk0boot0`), which is a separate area from the user data where the
+GPT lives. That is not available for SD cards and is not implemented here.
+
+## Boot order
+
+The boot order is fixed in the SoC and cannot be changed from software. eMMC
+is scanned before the SD card, so a board with a bootloader on eMMC will not
+boot from SD. Remove the eMMC module, or erase its bootloader, when testing an
+SD card image.
+
 ## Reproducible builds
 
 `aml_encrypt_g12a` seeds a 16 byte nonce in front of each `@AML` header from a
