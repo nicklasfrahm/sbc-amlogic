@@ -41,8 +41,10 @@ func (i *OdroidC4Installer) GetOptions(extra odroidC4ExtraOptions) (overlay.Opti
 		KernelArgs: []string{
 			"console=tty0",
 			"console=ttyAML0,115200",
+			// Prints from the AO UART before the real serial driver is up,
+			// which is the only way to see an early kernel hang.
+			"earlycon=meson,0xff803000",
 			"sysctl.kernel.kexec_load_disabled=1",
-			"talos.dashboard.disabled=1",
 		},
 		PartitionOptions: overlay.PartitionOptions{
 			// The signed FIP image is roughly 1.5 MiB and starts at sector 1,
