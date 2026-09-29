@@ -6,3 +6,6 @@ _out
 *.local.md
 *.override.md
 go.work.sum
+
+# build artifact from local `go build` in the installer source dir
+installers/*/src/odroid-c4
