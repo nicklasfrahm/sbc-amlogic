@@ -56,29 +56,12 @@ func (i *OdroidC4Installer) GetOptions(extra odroidC4ExtraOptions) (overlay.Opti
 }
 
 func (i *OdroidC4Installer) Install(options overlay.InstallOptions[odroidC4ExtraOptions]) error {
-	var f *os.File
-
-	f, err := os.OpenFile(options.InstallDisk, os.O_RDWR|unix.O_CLOEXEC, 0o666)
-	if err != nil {
-		return fmt.Errorf("failed to open %s: %w", options.InstallDisk, err)
-	}
-
-	defer f.Close() //nolint:errcheck
-
 	uboot, err := os.ReadFile(filepath.Join(options.ArtifactsPath, "arm64/u-boot/odroid-c4/u-boot.bin"))
 	if err != nil {
 		return err
 	}
 
-	if _, err = f.WriteAt(uboot, off); err != nil {
-		return err
-	}
-
-	// NB: In the case that the block device is a loopback device, we sync here
-	// to esure that the file is written before the loopback device is
-	// unmounted.
-	err = f.Sync()
-	if err != nil {
+	if err = installBootloader(options.InstallDisk, uboot); err != nil {
 		return err
 	}
 
@@ -91,4 +74,44 @@ func (i *OdroidC4Installer) Install(options overlay.InstallOptions[odroidC4Extra
 	}
 
 	return copy.File(src, dst)
+}
+
+// installBootloader puts the signed FIP where the boot ROM will find it.
+//
+// On eMMC that is the boot0 hardware partition, which leaves the user area
+// alone and lets the disk carry a normal GPT. Everywhere else, including SD
+// cards and the loopback device used when building an image, it goes to
+// sector 1 of the disk itself, on top of the primary GPT header.
+func installBootloader(installDisk string, fip []byte) error {
+	if bootDev := bootPartition(installDisk); bootDev != "" {
+		err := writeBootPartition(bootDev, fip)
+		if err == nil {
+			// Not fatal: the boot ROM checks boot0 by itself, this only makes
+			// the eMMC's own boot configuration agree with it.
+			if err = enableBootPartition(installDisk); err != nil {
+				fmt.Fprintf(os.Stderr, "odroid-c4: %s\n", err)
+			}
+
+			return nil
+		}
+
+		// Fall back to the user area rather than leave the board unbootable.
+		fmt.Fprintf(os.Stderr, "odroid-c4: %s, falling back to the user area\n", err)
+	}
+
+	f, err := os.OpenFile(installDisk, os.O_RDWR|unix.O_CLOEXEC, 0o666)
+	if err != nil {
+		return fmt.Errorf("failed to open %s: %w", installDisk, err)
+	}
+
+	defer f.Close() //nolint:errcheck
+
+	if _, err = f.WriteAt(fip, off); err != nil {
+		return err
+	}
+
+	// NB: In the case that the block device is a loopback device, we sync here
+	// to esure that the file is written before the loopback device is
+	// unmounted.
+	return f.Sync()
 }

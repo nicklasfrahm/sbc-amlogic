@@ -121,6 +121,25 @@ nothing depends on the backup, and Talos can rewrite the partition table as
 often as it likes. SD cards have no such fallback, the ROM only ever looks at
 sector 1 there.
 
+The installer does this automatically. When the install disk turns out to be
+an eMMC that exposes a `boot0` partition, the FIP goes there and the user area
+is left alone; the eMMC boot configuration is then pointed at `boot0`
+(`PART_CONFIG` = `BOOT_ACK` | boot0, the same thing `mmc bootpart enable 1 1`
+does). Everything else, SD cards included, keeps writing to sector 1 of the
+disk itself. If writing to `boot0` fails for any reason the installer falls
+back to the user area rather than leave the board unbootable.
+
+Two things follow from that:
+
+- `boot0` and `boot1` belong to the eMMC chip, not to the board. A board with
+  an empty eMMC connector has no boot partitions at all, and neither does an
+  SD card, so both take the sector 1 path.
+- A disk image written with `dd` also takes the sector 1 path, because at
+  image build time the installer is pointed at a loopback device. Reaching
+  `boot0` means installing onto the eMMC itself, e.g. with `talosctl install`.
+
+This path has not been exercised on hardware yet, for want of an eMMC module.
+
 ## Comparison with Armbian
 
 Armbian builds images for this board with an **MBR** partition table
